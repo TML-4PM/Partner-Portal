@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: insights-service-config
+data:
+  POSTGRES_HOST: "postgres-service"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "insights"
+  ANALYTICS_SERVICE_URL: "http://analytics-service"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: insights-service-secrets
+type: Opaque
+data:
+  POSTGRES_PASSWORD: base64encodedpassword
+  POSTGRES_USER: base64encodeduser
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: insights-service
+  labels:
+    app: insights-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: insights-service
+  template:
+    metadata:
+      labels:
+        app: insights-service
+    spec:
+      containers:
+      - name: insights-service
+        image: ${ECR_REGISTRY}/insights-service:latest
+        ports:
+        - containerPort: 3003
+        env:
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: insights-service-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: insights-service-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: insights-service-secrets
+              key: POSTGRES_PASSWORD
+        - name: ANALYTICS_SERVICE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: insights-service-config
+              key: ANALYTICS_SERVICE_URL
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "300m"
+          limits:
+            memory: "1Gi"
+            cpu: "700m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3003
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3003
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: insights-service
+spec:
+  selector:
+    app: insights-service
+  ports:
+  - port: 80
+    targetPort: 3003
+  type: ClusterIP
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: insights-generator
+spec:
+  schedule: "0 */6 * * *"  # Run every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: insights-generator
+            image: ${ECR_REGISTRY}/insights-service:latest
+            command: ["node", "scripts/generate-insights.js"]
+            env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: insights-service-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: insights-service-secrets
+                  key: POSTGRES_USER
+          restartPolicy: OnFailure

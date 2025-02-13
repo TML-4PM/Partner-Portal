@@ -1,0 +1,232 @@
+import { AnalyticsClient } from '../clients/analyticsClient';
+import { InsightRepository } from '../repositories/insightRepository';
+import { Insight } from '../../../../shared/types/insights';
+import { AnalyticsReport } from '../../../../shared/types/analytics';
+
+export class InsightAnalyzer {
+  private analyticsClient: AnalyticsClient;
+  private repository: InsightRepository;
+
+  constructor() {
+    this.analyticsClient = new AnalyticsClient();
+    this.repository = new InsightRepository();
+  }
+
+  async generateInsights(partnerId: string, timeRange: { start: string; end: string }) {
+    // Fetch analytics data
+    const analyticsReport = await this.analyticsClient.getReport(partnerId, timeRange);
+
+    // Generate different types of insights
+    const insights: Insight[] = [
+      ...this.analyzeTrends(partnerId, analyticsReport),
+      ...this.detectAnomalies(partnerId, analyticsReport),
+      ...this.generateRecommendations(partnerId, analyticsReport)
+    ];
+
+    // Store insights
+    await Promise.all(
+      insights.map(insight => this.repository.createInsight(insight))
+    );
+
+    return insights;
+  }
+
+  private analyzeTrends(partnerId: string, report: AnalyticsReport): Insight[] {
+    const insights: Insight[] = [];
+
+    // Analyze conversion rate trends
+    if (report.metrics.conversionRate < 2) {
+      insights.push({
+        id: `trend-${Date.now()}`,
+        partnerId,
+        type: 'TREND',
+        category: 'CONVERSION',
+        severity: 'HIGH',
+        content: {
+          title: 'Low Conversion Rate Alert',
+          description: `Your conversion rate is ${report.metrics.conversionRate.toFixed(1)}%, which is below the recommended threshold.`,
+          metrics: {
+            currentRate: report.metrics.conversionRate,
+            threshold: 2
+          },
+          recommendations: [
+            'Review your call-to-action placement',
+            'Analyze user journey for friction points',
+            'Consider A/B testing different layouts'
+          ]
+        },
+        metadata: {
+          source: 'conversion-analyzer',
+          confidence: 0.9,
+          timeRange: {
+            start: report.timeRange.start,
+            end: report.timeRange.end
+          }
+        },
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    // Add engagement trend analysis
+    if (report.metrics.averageDuration < 60) {
+      insights.push({
+        id: `trend-${Date.now() + 1}`,
+        partnerId,
+        type: 'TREND',
+        category: 'ENGAGEMENT',
+        severity: 'MEDIUM',
+        content: {
+          title: 'Low Engagement Duration',
+          description: `Average session duration is ${Math.round(report.metrics.averageDuration)} seconds, indicating potential engagement issues.`,
+          metrics: {
+            currentDuration: report.metrics.averageDuration,
+            benchmark: 60
+          },
+          recommendations: [
+            'Evaluate content quality and relevance',
+            'Improve page load times',
+            'Enhance interactive elements'
+          ]
+        },
+        metadata: {
+          source: 'engagement-analyzer',
+          confidence: 0.85,
+          timeRange: {
+            start: report.timeRange.start,
+            end: report.timeRange.end
+          }
+        },
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    return insights;
+  }
+
+  private detectAnomalies(partnerId: string, report: AnalyticsReport): Insight[] {
+    const insights: Insight[] = [];
+
+    // Detect sudden drops in traffic
+    const previousViews = report.metrics.totalViews * 1.5; // Example threshold
+    if (report.metrics.totalViews < previousViews * 0.7) {
+      insights.push({
+        id: `anomaly-${Date.now()}`,
+        partnerId,
+        type: 'ALERT',
+        category: 'PERFORMANCE',
+        severity: 'HIGH',
+        content: {
+          title: 'Significant Traffic Drop Detected',
+          description: `Traffic has decreased by ${Math.round((1 - report.metrics.totalViews/previousViews) * 100)}% compared to the previous period.`,
+          metrics: {
+            currentViews: report.metrics.totalViews,
+            previousViews,
+            dropPercentage: (1 - report.metrics.totalViews/previousViews) * 100
+          }
+        },
+        metadata: {
+          source: 'anomaly-detector',
+          confidence: 0.95,
+          timeRange: {
+            start: report.timeRange.start,
+            end: report.timeRange.end
+          }
+        },
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    return insights;
+  }
+
+  private generateRecommendations(partnerId: string, report: AnalyticsReport): Insight[] {
+    const insights: Insight[] = [];
+
+    // Generate recommendations based on metrics
+    const recommendationTypes = this.identifyRecommendationTypes(report);
+    
+    recommendationTypes.forEach(type => {
+      insights.push({
+        id: `recommendation-${Date.now()}-${type}`,
+        partnerId,
+        type: 'RECOMMENDATION',
+        category: 'PERFORMANCE',
+        severity: 'MEDIUM',
+        content: {
+          title: this.getRecommendationTitle(type),
+          description: this.getRecommendationDescription(type, report),
+          recommendations: this.getSpecificRecommendations(type)
+        },
+        metadata: {
+          source: 'recommendation-engine',
+          confidence: 0.8,
+          timeRange: {
+            start: report.timeRange.start,
+            end: report.timeRange.end
+          }
+        },
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    });
+
+    return insights;
+  }
+
+  private identifyRecommendationTypes(report: AnalyticsReport): string[] {
+    const types: string[] = [];
+    
+    if (report.metrics.conversionRate < 3) types.push('conversion');
+    if (report.metrics.averageDuration < 120) types.push('engagement');
+    if (report.metrics.totalInteractions < report.metrics.totalViews * 0.3) types.push('interaction');
+    
+    return types;
+  }
+
+  private getRecommendationTitle(type: string): string {
+    const titles: Record<string, string> = {
+      conversion: 'Conversion Rate Optimization Opportunities',
+      engagement: 'User Engagement Enhancement Suggestions',
+      interaction: 'Interaction Rate Improvement Recommendations'
+    };
+    return titles[type] || 'General Recommendations';
+  }
+
+  private getRecommendationDescription(type: string, report: AnalyticsReport): string {
+    const descriptions: Record<string, string> = {
+      conversion: `Current conversion rate is ${report.metrics.conversionRate.toFixed(1)}%. Here are ways to improve it.`,
+      engagement: `Users spend an average of ${Math.round(report.metrics.averageDuration)} seconds on your platform. Let's increase this.`,
+      interaction: 'Your interaction rate could be improved. Consider these suggestions.'
+    };
+    return descriptions[type] || 'Here are some general recommendations for improvement.';
+  }
+
+  private getSpecificRecommendations(type: string): string[] {
+    const recommendations: Record<string, string[]> = {
+      conversion: [
+        'Optimize your call-to-action buttons',
+        'Streamline the conversion funnel',
+        'Implement social proof elements',
+        'Add urgency triggers'
+      ],
+      engagement: [
+        'Create more interactive content',
+        'Improve page load times',
+        'Implement personalized content recommendations',
+        'Add gamification elements'
+      ],
+      interaction: [
+        'Add clear calls-to-action',
+        'Implement interactive elements',
+        'Create engaging content formats',
+        'Optimize button placement'
+      ]
+    };
+    return recommendations[type] || [];

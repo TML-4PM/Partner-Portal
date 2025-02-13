@@ -1,0 +1,140 @@
+import { InsightAnalyzer } from '../analyzers/insightAnalyzer';
+import { AnalyticsClient } from '../clients/analyticsClient';
+import { InsightRepository } from '../repositories/insightRepository';
+import { AnalyticsReport } from '../../../../shared/types/analytics';
+
+jest.mock('../clients/analyticsClient');
+jest.mock('../repositories/insightRepository');
+
+describe('InsightAnalyzer Tests', () => {
+  let analyzer: InsightAnalyzer;
+  let mockAnalyticsReport: AnalyticsReport;
+  const partnerId = 'test-partner';
+  const timeRange = {
+    start: '2025-01-01T00:00:00Z',
+    end: '2025-01-31T23:59:59Z'
+  };
+
+  beforeEach(() => {
+    analyzer = new InsightAnalyzer();
+    mockAnalyticsReport = {
+      partnerId,
+      timeRange,
+      metrics: {
+        totalViews: 1000,
+        totalInteractions: 500,
+        conversionRate: 1.5,
+        averageDuration: 45
+      }
+    };
+
+    // Mock analytics client response
+    (AnalyticsClient.prototype.getReport as jest.Mock).mockResolvedValue(
+      mockAnalyticsReport
+    );
+  });
+
+  describe('generateInsights', () => {
+    it('should generate insights for low conversion rate', async () => {
+      const insights = await analyzer.generateInsights(partnerId, timeRange);
+
+      expect(insights).toContainEqual(
+        expect.objectContaining({
+          partnerId,
+          type: 'TREND',
+          category: 'CONVERSION',
+          severity: 'HIGH'
+        })
+      );
+
+      expect(InsightRepository.prototype.createInsight).toHaveBeenCalled();
+    });
+
+    it('should generate insights for low engagement', async () => {
+      const insights = await analyzer.generateInsights(partnerId, timeRange);
+
+      expect(insights).toContainEqual(
+        expect.objectContaining({
+          partnerId,
+          type: 'TREND',
+          category: 'ENGAGEMENT',
+          severity: 'MEDIUM'
+        })
+      );
+    });
+
+    it('should detect traffic anomalies', async () => {
+      mockAnalyticsReport.metrics.totalViews = 300; // Significant drop
+
+      const insights = await analyzer.generateInsights(partnerId, timeRange);
+
+      expect(insights).toContainEqual(
+        expect.objectContaining({
+          partnerId,
+          type: 'ALERT',
+          category: 'PERFORMANCE',
+          severity: 'HIGH'
+        })
+      );
+    });
+
+    it('should generate appropriate recommendations', async () => {
+      const insights = await analyzer.generateInsights(partnerId, timeRange);
+
+      const recommendations = insights.filter(
+        insight => insight.type === 'RECOMMENDATION'
+      );
+
+      expect(recommendations).toHaveLength(expect.any(Number));
+      expect(recommendations[0]).toHaveProperty('content.recommendations');
+      expect(recommendations[0].content.recommendations).toBeInstanceOf(Array);
+    });
+
+    it('should handle analytics client errors', async () => {
+      (AnalyticsClient.prototype.getReport as jest.Mock).mockRejectedValue(
+        new Error('Analytics service error')
+      );
+
+      await expect(analyzer.generateInsights(partnerId, timeRange))
+        .rejects
+        .toThrow('Analytics service error');
+    });
+  });
+
+  describe('analyzeTrends', () => {
+    it('should identify concerning trends', () => {
+      const trends = analyzer['analyzeTrends'](partnerId, mockAnalyticsReport);
+
+      expect(trends).toContainEqual(
+        expect.objectContaining({
+          type: 'TREND',
+          severity: expect.any(String),
+          content: expect.objectContaining({
+            title: expect.any(String),
+            description: expect.any(String),
+            metrics: expect.any(Object)
+          })
+        })
+      );
+    });
+  });
+
+  describe('detectAnomalies', () => {
+    it('should detect significant changes', () => {
+      const anomalies = analyzer['detectAnomalies'](partnerId, mockAnalyticsReport);
+
+      expect(anomalies).toBeInstanceOf(Array);
+      anomalies.forEach(anomaly => {
+        expect(anomaly).toMatchObject({
+          type: 'ALERT',
+          category: 'PERFORMANCE',
+          metadata: expect.objectContaining({
+            confidence: expect.any(Number)
+          })
+        });
+      });
+    });
+  });
+
+  describe('generateRecommendations', () => {
+    it('should provide actionable recommendations', () =>
