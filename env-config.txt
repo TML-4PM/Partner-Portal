@@ -1,0 +1,4 @@
+NEXT_PUBLIC_API_URL=https://your-api-domain.com
+FILE_SERVICE_URL=https://files-api.your-domain.com
+ANALYTICS_SERVICE_URL=https://analytics-api.your-domain.com
+INSIGHTS_SERVICE_URL=https://insights-api.your-domain.com
